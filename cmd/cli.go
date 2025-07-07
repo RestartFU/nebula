@@ -13,7 +13,7 @@ import (
 	"nebula/internal"
 )
 
-const nodeURL = "http://localhost:8080"
+const nodeURL = "http://localhost:8081"
 
 func main() {
 	wallet, err := internal.LoadWalletFromFile("wallet.key")

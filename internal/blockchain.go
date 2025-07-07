@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
-	"time"
-
 	"github.com/syndtr/goleveldb/leveldb"
+	"log"
 )
 
 type Block struct {
@@ -39,7 +37,7 @@ func NewBlockchain(rewardAddress string, dbPath string) (*Blockchain, error) {
 	if err != nil {
 		genesis := &Block{
 			Index:     0,
-			Timestamp: time.Now().Unix(),
+			Timestamp: -22082082,
 			Transactions: []Transaction{
 				{
 					Type:  TxTransfer,
@@ -96,6 +94,46 @@ func (bc *Blockchain) saveBlockToDB(block *Block) error {
 	return err
 }
 
+func (bc *Blockchain) ReplaceChain(newBlocks []*Block) error {
+	if len(newBlocks) <= len(bc.Blocks) {
+		return errors.New("received chain is not longer")
+	}
+
+	// Validate each block in sequence
+	for i := range newBlocks {
+		if i == 0 {
+			// Genesis block: allow mismatch
+			continue
+		}
+		if newBlocks[i].PrevHash != newBlocks[i-1].Hash {
+			return fmt.Errorf("invalid chain at block %d: hash mismatch", i)
+		}
+		if err := bc.ValidateBlock(newBlocks[i]); err != nil {
+			return fmt.Errorf("block %d invalid: %v", i, err)
+		}
+	}
+
+	// Clear LevelDB and replace with new chain
+	iter := bc.db.NewIterator(nil, nil)
+	for iter.Next() {
+		key := iter.Key()
+		if err := bc.db.Delete(key, nil); err != nil {
+			return err
+		}
+	}
+	iter.Release()
+
+	// Save new chain to DB
+	for _, block := range newBlocks {
+		if err := bc.saveBlockToDB(block); err != nil {
+			return err
+		}
+	}
+
+	bc.Blocks = newBlocks
+	return nil
+}
+
 func (b *Block) CalculateHash() string {
 	data, _ := json.Marshal(struct {
 		Index        int
@@ -133,11 +171,6 @@ func (bc *Blockchain) AddBlock(newBlock *Block) error {
 // - Balances sufficient
 // - And signatures valid on all non-reward transactions
 func (bc *Blockchain) ValidateBlock(block *Block) error {
-	latest := bc.Blocks[len(bc.Blocks)-1]
-	if block.PrevHash != latest.Hash {
-		return errors.New("invalid previous hash")
-	}
-
 	hash := block.CalculateHash()
 	if hash != block.Hash {
 		return errors.New("block hash mismatch")
