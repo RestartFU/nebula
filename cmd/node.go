@@ -2,10 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"github.com/gorilla/mux"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -14,19 +18,19 @@ import (
 )
 
 type Node struct {
+	sync.Mutex
 	Chain *internal.Blockchain
 	Pool  []internal.Transaction
 	Peers []string
-	sync.Mutex
 }
 
 func main() {
-	config, err := internal.LoadConfig("nebula.conf")
+	config, err := internal.LoadConfig("config.toml")
 	if err != nil {
-		log.Printf("[WARN] Failed to load nebula.conf, using defaults: %v\n", err)
+		log.Printf("[WARN] Failed to load nebula.env, using defaults: %v\n", err)
 	}
 
-	blockchain, err := internal.NewBlockchain(config.RewardAddress, config.DBPath)
+	blockchain, err := internal.NewBlockchain(config.DBPath)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -40,15 +44,17 @@ func main() {
 
 	go node.SyncLoop()
 
-	http.HandleFunc("/tx", node.HandleTx)
-	http.HandleFunc("/blocks", node.HandleBlocks)
-	http.HandleFunc("/tx/confirm", node.HandleConfirm)
-	http.HandleFunc("/tx/pool", node.HandleMempool)
-	http.HandleFunc("/block", node.HandleSubmitBlock)
-	http.HandleFunc("/peers", node.HandlePeers)
+	router := mux.NewRouter()
+	router.HandleFunc("/balance", node.HandleBalance).Queries("address", "{address}").Methods("GET")
+	router.HandleFunc("/tx", node.HandleTx)
+	router.HandleFunc("/blocks", node.HandleBlocks)
+	router.HandleFunc("/tx/confirm", node.HandleConfirm)
+	router.HandleFunc("/tx/pool", node.HandleMempool)
+	router.HandleFunc("/block", node.HandleSubmitBlock)
+	router.HandleFunc("/peers", node.HandlePeers)
 
-	log.Printf("Nebula node '%s' running at :%s\n", config.NodeName, config.Port)
-	log.Fatal(http.ListenAndServe(":"+config.Port, nil))
+	log.Printf("Nebula node running at :%d\n", config.Port)
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(config.Port), router))
 }
 
 func CloseOnProgramEnd(blockchain *internal.Blockchain) {
@@ -152,6 +158,15 @@ func (n *Node) HandlePeers(w http.ResponseWriter, r *http.Request) {
 	defer n.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(n.Peers)
+}
+
+func (n *Node) HandleBalance(w http.ResponseWriter, r *http.Request) {
+	addr, ok := mux.Vars(r)["address"]
+	if !ok {
+		w.WriteHeader(http.StatusBadRequest)
+	}
+	bal := n.Chain.GetBalance(addr)
+	_, _ = io.WriteString(w, fmt.Sprintf("%v", bal))
 }
 
 func (n *Node) HandleTx(w http.ResponseWriter, r *http.Request) {
@@ -274,5 +289,5 @@ func (n *Node) HandleSubmitBlock(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[BLOCK ACCEPTED] #%d (%d txs)", block.Index, len(block.Transactions))
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("block accepted"))
+	_, _ = w.Write([]byte("block accepted"))
 }

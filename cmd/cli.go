@@ -3,8 +3,11 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -13,17 +16,22 @@ import (
 	"nebula/internal"
 )
 
-const nodeURL = "http://localhost:8081"
+const nodeURL = "http://localhost:8080"
 
 func main() {
-	wallet, err := internal.LoadWalletFromFile("wallet.key")
+	wallet, err := internal.LoadWalletFromFile("wallet.pk")
 	if err != nil {
-		fmt.Println("Failed to load wallet.key:", err)
-		return
+		wallet, err = internal.NewWallet()
+		if err != nil {
+			log.Fatalf("Failed to create wallet: %s", err)
+		}
+		_ = os.WriteFile("wallet.pk", []byte(hex.EncodeToString(wallet.PrivateKey.Serialize())), 0600)
 	}
 
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Println("Nebula CLI Wallet")
+	fmt.Println("-----------------")
+	fmt.Println(wallet.Address)
 	fmt.Println("-----------------")
 
 	for {
@@ -62,16 +70,8 @@ func balance(addr string) {
 	}
 	defer resp.Body.Close()
 
-	var res struct {
-		Balance float64 `json:"balance"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		fmt.Println("Error decoding response:", err)
-		return
-	}
-
-	fmt.Printf("Balance for %s: %.8f\n", addr, res.Balance)
+	bal, _ := io.ReadAll(resp.Body)
+	fmt.Printf("Balance for %s: %s\n", addr, bal)
 }
 
 func send(wallet *internal.Wallet, reader *bufio.Reader) {

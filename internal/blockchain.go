@@ -23,7 +23,7 @@ type Blockchain struct {
 	db     *leveldb.DB
 }
 
-func NewBlockchain(rewardAddress string, dbPath string) (*Blockchain, error) {
+func NewBlockchain(dbPath string) (*Blockchain, error) {
 	db, err := leveldb.OpenFile(dbPath, nil)
 	if err != nil {
 		return nil, err
@@ -42,7 +42,7 @@ func NewBlockchain(rewardAddress string, dbPath string) (*Blockchain, error) {
 				{
 					Type:  TxTransfer,
 					From:  "nebula",
-					To:    rewardAddress,
+					To:    "1879fc84e4469a624a82f8d786f5dfef9b65a712",
 					Price: 1000,
 					Fee:   0,
 				},

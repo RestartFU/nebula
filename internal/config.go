@@ -1,56 +1,44 @@
 package internal
 
 import (
-	"bufio"
+	"errors"
+	"fmt"
+	"github.com/restartfu/gophig"
 	"os"
-	"strings"
 )
 
 type Config struct {
-	Port           string
-	RewardAddress  string
+	Port           int
 	DBPath         string
 	BootstrapPeers []string
-	NodeName       string
 }
 
-func LoadConfig(path string) (*Config, error) {
-	cfg := &Config{
-		Port:   "8080",
+func LoadConfig(path string) (Config, error) {
+	g := gophig.NewGophig[Config](path, gophig.TOMLMarshaler{}, 0666)
+	cfg, err := g.LoadConf()
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			err = g.SaveConf(DefaultConfig())
+			if err != nil {
+				return cfg, err
+			}
+		}
+	}
+	return cfg, nil
+}
+
+func DefaultConfig() Config {
+	cfg := Config{
+		Port:   8080,
 		DBPath: "data/blockchain",
 	}
-
-	file, err := os.Open(path)
-	if err != nil {
-		return cfg, err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "#") || strings.TrimSpace(line) == "" {
-			continue
-		}
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-		switch key {
-		case "port":
-			cfg.Port = value
-		case "reward_address":
-			cfg.RewardAddress = value
-		case "db_path":
-			cfg.DBPath = value
-		case "bootstrap_peers":
-			cfg.BootstrapPeers = strings.Split(value, ",")
-		case "node_name":
-			cfg.NodeName = value
+	if len(cfg.BootstrapPeers) == 0 {
+		for port := 8000; port <= 8999; port++ {
+			if port == cfg.Port {
+				continue
+			}
+			cfg.BootstrapPeers = append(cfg.BootstrapPeers, fmt.Sprintf("127.0.0.1:%d", port))
 		}
 	}
-
-	return cfg, scanner.Err()
+	return cfg
 }
